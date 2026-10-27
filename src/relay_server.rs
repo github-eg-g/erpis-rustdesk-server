@@ -82,6 +82,7 @@ pub async fn start_with_bind(
         BLOCKLIST_FILE,
         BLOCKLIST.read().await.len()
     );
+    crate::access_control::log_relay_gate();
     let port: u16 = port.parse()?;
     log::info!("Listening on tcp :{}", port);
     let port2 = port + 2;
@@ -304,6 +305,9 @@ async fn check_cmd(cmd: &str, limiter: Limiter) -> String {
                 );
             }
         }
+        Some(crate::access_control::CONSOLE_ALLOW_CMD) => {
+            res = crate::access_control::console_allow(fds.next()).await;
+        }
         Some("usage" | "u") => {
             let mut tmp: Vec<(String, Usage)> = USAGE
                 .read()
@@ -470,6 +474,16 @@ async fn make_pair_(stream: impl StreamTrait, addr: SocketAddr, key: &str, limit
                 if !rf.uuid.is_empty() {
                     let mut peer = PEERS.lock().await.remove(&rf.uuid);
                     if let Some(peer) = peer.as_mut() {
+                        if crate::access_control::relay_gate_enabled()
+                            && !crate::access_control::take_allowed_uuid(&rf.uuid).await
+                        {
+                            log::warn!(
+                                "Erpis: relay {} from {} refused, uuid not announced",
+                                rf.uuid,
+                                addr
+                            );
+                            return;
+                        }
                         log::info!("Relayrequest {} from {} got paired", rf.uuid, addr);
                         let id = format!("{}:{}", addr.ip(), addr.port());
                         USAGE.write().await.insert(id.clone(), Default::default());

@@ -1,0 +1,60 @@
+name: erpis-release
+
+# Builds the Erpis-patched hbbs/hbbr (x86_64 static musl), runs the access-gate
+# tests and, for erpis-* tags, publishes the binaries + Dockerfile + SHA256SUMS
+# as a GitHub release (AGPL-3.0 §13: the source is this repository at the tag).
+
+on:
+  push:
+    tags: ['erpis-*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test addresses (non-loopback, see tests/erpis_access.rs)
+        run: for a in 10.97.0.1 10.97.0.2 198.51.100.3 198.51.100.4 198.51.100.5 198.51.100.6 198.51.100.7; do sudo ip addr add $a/32 dev lo; done
+      - run: cargo test --locked --lib --test erpis_access
+
+  build:
+    needs: test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+      - run: cargo install cross --locked --version 0.2.5
+      - run: cross build --locked --release --target x86_64-unknown-linux-musl --bin hbbs --bin hbbr
+      - name: Package
+        run: |
+          mkdir dist
+          cp target/x86_64-unknown-linux-musl/release/hbbs target/x86_64-unknown-linux-musl/release/hbbr docker-erpis/Dockerfile dist/
+          cd dist
+          sha256sum hbbs hbbr Dockerfile > SHA256SUMS
+          cat SHA256SUMS
+          echo "source commit: $GITHUB_SHA"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: erpis-rustdesk-server-linux-amd64
+          path: dist/*
+          if-no-files-found: error
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$GITHUB_REF_NAME" \
+            --notes "Erpis-patched rustdesk-server (see ERPIS.md). Source: commit $GITHUB_SHA. SHA256SUMS lists the published files."

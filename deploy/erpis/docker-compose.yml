@@ -1,0 +1,28 @@
+# Erpis deployment: same key volume as the Hostinger template project
+# (rustdesk-qdfi), so the public key and every distributed client stay valid.
+# The old project is stopped, not removed: `docker compose start` there rolls back.
+services:
+  hbbs:
+    image: erpis-rustdesk-server:${ERPIS_TAG:?set ERPIS_TAG}
+    command: hbbs -k _ -r rd.erpyazilim.com:21117
+    environment:
+      - ERPIS_INITIATOR_CIDRS=10.97.0.0/24
+      - ALWAYS_USE_RELAY=Y
+    volumes:
+      - rustdesk-qdfi_hbbs_data:/root
+    network_mode: "host"
+    depends_on:
+      - hbbr
+    restart: unless-stopped
+  hbbr:
+    image: erpis-rustdesk-server:${ERPIS_TAG:?set ERPIS_TAG}
+    command: hbbr -k _
+    environment:
+      - ERPIS_RELAY_GATE=Y
+    volumes:
+      - rustdesk-qdfi_hbbs_data:/root
+    network_mode: "host"
+    restart: unless-stopped
+volumes:
+  rustdesk-qdfi_hbbs_data:
+    external: true

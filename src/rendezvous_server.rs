@@ -131,6 +131,7 @@ impl RendezvousServer {
         rmem: usize,
     ) -> ResultType<()> {
         let (key, sk) = Self::get_server_sk(key)?;
+        crate::access_control::init()?;
         let nat_port = port - 1;
         let ws_port = port + 2;
         let pm = PeerMap::new().await?;
@@ -539,11 +540,23 @@ impl RendezvousServer {
                     return true;
                 }
                 Some(rendezvous_message::Union::RequestRelay(mut rf)) => {
+                    if !crate::access_control::is_initiator_allowed(addr, ws) {
+                        crate::access_control::log_refused(addr, "relay request", &rf.id).await;
+                        let mut msg_out = RendezvousMessage::new();
+                        msg_out.set_relay_response(RelayResponse {
+                            refuse_reason: crate::access_control::REFUSED.to_owned(),
+                            ..Default::default()
+                        });
+                        Self::send_to_sink(sink, msg_out).await;
+                        return false;
+                    }
                     // there maybe several attempt, so sink can be none
                     if let Some(sink) = sink.take() {
                         self.tcp_punch.lock().await.insert(try_into_v4(addr), sink);
                     }
                     if let Some(peer) = self.pm.get_in_memory(&rf.id).await {
+                        crate::access_control::record_authorized(addr).await;
+                        crate::access_control::announce_uuid(&rf.uuid).await;
                         let mut msg_out = RendezvousMessage::new();
                         rf.socket_addr = AddrMangle::encode(addr).into();
                         msg_out.set_request_relay(rf);
@@ -554,6 +567,12 @@ impl RendezvousServer {
                 }
                 Some(rendezvous_message::Union::RelayResponse(mut rr)) => {
                     let addr_b = AddrMangle::decode(&rr.socket_addr);
+                    if !rr.uuid.is_empty()
+                        && crate::access_control::enabled()
+                        && crate::access_control::is_authorized(addr_b).await
+                    {
+                        crate::access_control::announce_uuid(&rr.uuid).await;
+                    }
                     rr.socket_addr = Default::default();
                     let id = rr.id();
                     if !id.is_empty() {
@@ -736,6 +755,15 @@ impl RendezvousServer {
             });
             return Ok((msg_out, None));
         }
+        if !crate::access_control::is_initiator_allowed(addr, ws) {
+            crate::access_control::log_refused(addr, "punch hole request", &ph.id).await;
+            let mut msg_out = RendezvousMessage::new();
+            msg_out.set_punch_hole_response(PunchHoleResponse {
+                other_failure: crate::access_control::REFUSED.to_owned(),
+                ..Default::default()
+            });
+            return Ok((msg_out, None));
+        }
         let id = ph.id;
         // punch hole request from A, relay to B,
         // check if in same intranet first,
@@ -756,6 +784,7 @@ impl RendezvousServer {
                 return Ok((msg_out, None));
             }
             
+            crate::access_control::record_authorized(addr).await;
             // record punch hole request (from addr -> peer id/peer_addr)
             record_punch_req(
                 try_into_v4(addr).ip().to_string(),
@@ -1162,7 +1191,9 @@ impl RendezvousServer {
                             stream.send(&msg_out).await.ok();
                         }
                         Some(rendezvous_message::Union::OnlineRequest(or)) => {
-                            allow_err!(rs.handle_online_request(&mut stream, or.peers).await);
+                            if crate::access_control::is_initiator_allowed(addr, false) {
+                                allow_err!(rs.handle_online_request(&mut stream, or.peers).await);
+                            }
                         }
                         _ => {}
                     }
