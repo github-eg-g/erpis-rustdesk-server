@@ -1,6 +1,6 @@
 name: erpis-release
 
-# Builds the Erpis-patched hbbs/hbbr (x86_64 static musl), runs the access-gate
+# Builds the Erpis-patched hbbs/hbbr (x86_64 glibc, Ubuntu 24.04), runs the access-gate
 # tests and, for erpis-* tags, publishes the binaries + Dockerfile + SHA256SUMS
 # as a GitHub release (AGPL-3.0 §13: the source is this repository at the tag).
 
@@ -32,14 +32,11 @@ jobs:
         with:
           submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-unknown-linux-musl
-      - run: cargo install cross --locked --version 0.2.5
-      - run: cross build --locked --release --target x86_64-unknown-linux-musl --bin hbbs --bin hbbr
+      - run: cargo build --locked --release --bin hbbs --bin hbbr
       - name: Package
         run: |
           mkdir dist
-          cp target/x86_64-unknown-linux-musl/release/hbbs target/x86_64-unknown-linux-musl/release/hbbr docker-erpis/Dockerfile dist/
+          cp target/release/hbbs target/release/hbbr docker-erpis/Dockerfile dist/
           cd dist
           sha256sum hbbs hbbr Dockerfile > SHA256SUMS
           cat SHA256SUMS
