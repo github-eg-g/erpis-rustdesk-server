@@ -1,0 +1,40 @@
+# cargo audit baseline (2026-10-28): advisories already present in the dependencies
+# inherited from upstream rustdesk-server 1.1.17. The weekly erpis-watch job fails only
+# on advisories NOT listed here, i.e. new ones. Reviewed for the Erpis deployment:
+# - RUSTSEC-2023-0065 (tungstenite DoS) is the network-facing one; it sits behind the
+#   WebSocket ports 21118/21119, which are closed on this server.
+# - The rustls/webpki/webpki-roots/openssl/h2/sqlx items are in client-side TLS/HTTP
+#   and database code paths; hbbs/hbbr terminate no TLS and expose no HTTP port here.
+# When merging a newer upstream, run `cargo audit` and shrink this list to what remains.
+[advisories]
+ignore = [
+    "RUSTSEC-2022-0055",
+    "RUSTSEC-2022-0090",
+    "RUSTSEC-2023-0018",
+    "RUSTSEC-2023-0052",
+    "RUSTSEC-2023-0065",
+    "RUSTSEC-2024-0336",
+    "RUSTSEC-2024-0363",
+    "RUSTSEC-2025-0004",
+    "RUSTSEC-2025-0009",
+    "RUSTSEC-2025-0022",
+    "RUSTSEC-2025-0040",
+    "RUSTSEC-2026-0098",
+    "RUSTSEC-2026-0099",
+    "RUSTSEC-2026-0104",
+    "RUSTSEC-2026-0194",
+    "RUSTSEC-2026-0195",
+    "RUSTSEC-2026-0204",
+    "RUSTSEC-2026-0258",
+    "RUSTSEC-2026-0285",
+    "RUSTSEC-2026-0346",
+    "RUSTSEC-2026-0348",
+    "RUSTSEC-2026-0349",
+    "RUSTSEC-2026-0381",
+    "RUSTSEC-2026-0382",
+    "RUSTSEC-2026-0383",
+    "RUSTSEC-2026-0387",
+    "RUSTSEC-2026-0391",
+    "RUSTSEC-2026-0403",
+    "RUSTSEC-2026-0410",
+]

@@ -87,3 +87,24 @@ covers:
   is never paired and no data flows.
 - Controlled devices still connect to the server from anywhere. That is
   required for them to be reachable.
+
+## Watch and maintenance
+
+`.github/workflows/erpis-watch.yml` runs on GitHub's schedule (free for a public
+repository) and e-mails the repository owner when a run turns red:
+
+- **hourly**: 21115, 21116 and 21117 on `rd.erpyazilim.com` answer from the
+  internet (three tries each, 20 s apart);
+- **weekly**: `cargo audit` against RustSec, failing only on advisories that are
+  not in the reviewed baseline `.cargo/audit.toml`; and an issue when upstream
+  rustdesk-server releases past the version in `Cargo.toml`;
+- **monthly**: an issue reminding to refresh the image, and a call that keeps
+  GitHub from disabling the scheduled runs after 60 days without commits.
+
+Updating the server is done from ErpisRustDeskAdmin → Bakım: *update* moves to
+a newer `erpis-v*` release (download, SHA256SUMS check, image build, switch),
+*refresh* rebuilds the running release on the current Ubuntu base. Both check
+that the new containers are up on the expected image, report the same server
+key and the access gate, and switch back by themselves when they do not.
+The host itself takes Ubuntu and Docker security updates unattended, rebooting
+at 04:30 Istanbul time when a kernel update asks for it.

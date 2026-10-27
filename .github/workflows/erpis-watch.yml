@@ -1,0 +1,98 @@
+name: erpis-watch
+
+# Watches the Erpis RustDesk server from the outside. A red run makes GitHub
+# e-mail whoever last changed this file's schedule; new upstream releases and
+# the monthly maintenance reminder arrive as issues (also e-mailed).
+#
+#   hourly  : do 21115/21116/21117 answer from the internet (3 tries each)
+#   weekly  : known vulnerabilities in the Rust dependencies (RustSec, cargo audit)
+#             and whether upstream rustdesk-server released past our base
+#   monthly : "refresh the image" reminder, and re-enabling this workflow so
+#             GitHub does not switch scheduled runs off after 60 quiet days
+on:
+  schedule:
+    - cron: '17 * * * *'
+    - cron: '41 4 * * 1'
+    - cron: '23 6 1 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  actions: write
+
+env:
+  HOST: rd.erpyazilim.com
+  GH_TOKEN: ${{ github.token }}
+  GH_REPO: ${{ github.repository }}
+
+jobs:
+  ports:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '17 * * * *'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: RustDesk ports answer from the internet
+        run: |
+          fail=0
+          for port in 21115 21116 21117; do
+            ok=0
+            for try in 1 2 3; do
+              if timeout 5 bash -c "exec 3<>/dev/tcp/$HOST/$port"; then ok=1; break; fi
+              sleep 20
+            done
+            if [ "$ok" = 1 ]; then
+              echo "$HOST:$port answers"
+            else
+              echo "::error::$HOST:$port did not answer in three tries"
+              fail=1
+            fi
+          done
+          exit $fail
+
+  security:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '41 4 * * 1'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Upstream rustdesk-server release past our base
+        run: |
+          base=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          latest=$(gh api repos/rustdesk/rustdesk-server/releases/latest --jq .tag_name)
+          echo "fork base $base, upstream latest $latest"
+          newer=$(python3 - "$latest" "$base" <<'PY'
+          import re, sys
+          parts = lambda v: [int(x) for x in re.findall(r"\d+", v)]
+          print(1 if parts(sys.argv[1]) > parts(sys.argv[2]) else 0)
+          PY
+          )
+          if [ "$newer" = 1 ]; then
+            title="Upstream rustdesk-server $latest (fork base $base)"
+            open=$(gh issue list --state open --search "in:title \"$title\"" --json number --jq 'length')
+            if [ "$open" = 0 ]; then
+              gh issue create --title "$title" --body "RustDesk released rustdesk-server $latest; this fork is based on $base.
+
+          To take it: merge the upstream tag into \`master\`, run \`cargo test --lib --test erpis_access\`, push an \`erpis-v*\` tag (erpis-release builds and publishes it), then ErpisRustDeskAdmin → Bakım → update. The server rolls back by itself if the new build does not come up with the same key and the access gate.
+
+          Release notes: https://github.com/rustdesk/rustdesk-server/releases/tag/$latest"
+            fi
+          fi
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - name: Known vulnerabilities in Rust dependencies (RustSec)
+        run: cargo audit
+
+  monthly:
+    if: github.event.schedule == '23 6 1 * *'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Keep the scheduled runs enabled
+        run: gh api -X PUT "repos/$GH_REPO/actions/workflows/erpis-watch.yml/enable"
+      - name: Monthly maintenance reminder
+        run: |
+          gh issue create --title "Monthly maintenance $(date +%Y-%m)" --body "ErpisRustDeskAdmin → Bakım → **İmajı tazele**: rebuilds the running release on the current Ubuntu base (security patches), checks it comes up with the same key and the access gate, and rolls back by itself if not.
+
+          While there: Durum should be all green, and the latest versions table should show nothing new. Close this issue when done."
